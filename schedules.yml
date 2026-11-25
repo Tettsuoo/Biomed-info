@@ -1,0 +1,33 @@
+# Save as .github/workflows/schedules.yml (replaces weekly.yml).
+# Repo also needs: index.html (the dashboard), update_prices.py, update_news.py, update_sec.py (edit your email in its UA line).
+# Settings > Pages: publish from the main branch. Add repo secret ANTHROPIC_API_KEY.
+# GitHub cron can run a few minutes late and only the default branch is scheduled.
+name: refresh
+on:
+  schedule:
+    - cron: "5 14-21 * * 1-5"   # hourly during US market hours (UTC)
+    - cron: "0 12 * * 1"        # weekly news, Mondays
+  workflow_dispatch: {}
+permissions: {contents: write}
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - run: pip install yfinance anthropic
+      - name: Prices
+        if: github.event.schedule != '0 12 * * 1'
+        run: python update_prices.py
+      - name: News
+        if: github.event.schedule == '0 12 * * 1' || github.event_name == 'workflow_dispatch'
+        run: python update_news.py
+        env: {ANTHROPIC_API_KEY: "${{ secrets.ANTHROPIC_API_KEY }}"}
+      - name: SEC filings
+        if: github.event.schedule == '0 12 * * 1' || github.event_name == 'workflow_dispatch'
+        run: pip install requests && python update_sec.py
+      - run: |
+          git config user.name bot && git config user.email bot@users.noreply.github.com
+          git add prices.json news.json sec.json && git commit -m "data refresh" || true
+          git pull --rebase && git push
